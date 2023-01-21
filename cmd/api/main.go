@@ -4,16 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"flag"
+	"fmt"
+	"log"
+	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	// undescore (alias) is used to avoid go compiler complaining or erasing this
 	// library.
 	_ "github.com/lib/pq"
 	"github.com/shynggys9219/greenlight/internal/data"
-	"github.com/shynggys9219/greenlight/internal/jsonlog"
-	"github.com/shynggys9219/greenlight/internal/mailer"
 )
 
 const version = "1.0.0"
@@ -30,32 +30,12 @@ type config struct {
 		maxIdleTime  string // the maximum length of time that a connection can be idle
 		// maxLifetime  string //optional here; maximum length of time that a connection can be reused for
 	}
-
-	// Add a new limiter struct containing fields for the requests-per-second and burst
-	// values, and a boolean field which we can use to enable/disable rate limiting
-	// altogether.
-	limiter struct {
-		rps     float64
-		burst   int
-		enabled bool
-	}
-	// smtp sever credentials & sender (email) info
-	smtp struct {
-		host     string
-		port     int
-		username string
-		password string
-		sender   string
-	}
 }
 
 type application struct {
 	config config
-	logger *jsonlog.Logger // new customized logger
-	models data.Models     // hold new models in app
-	mailer mailer.Mailer   // use ower mailer from mailer.go
-	// used to wait for a collection of goroutines to finish their work
-	wg sync.WaitGroup
+	logger *log.Logger
+	models data.Models // hold new models in app
 }
 
 func main() {
@@ -74,54 +54,34 @@ func main() {
 	flag.StringVar(&cfg.db.maxIdleTime, "db-max-idle-time", "15m", "PostgreSQL max idle time")
 	// flag.StringVar(&cfg.db.maxLifetime, "db-max-lifetime", "1h", "PostgreSQL max idle time")
 
-	// Create command line flags to read the setting values into the config struct.
-	// Notice that we use true as the default for the 'enabled' setting?
-	flag.Float64Var(&cfg.limiter.rps, "limiter-rps", 2, "Rate limiter maximum requests per second")
-	flag.IntVar(&cfg.limiter.burst, "limiter-burst", 4, "Rate limiter maximum burst")
-	flag.BoolVar(&cfg.limiter.enabled, "limiter-enabled", true, "Enable rate limiter")
-
-	// Read the SMTP server configuration settings into the config struct, using the
-	// Mailtrap settings as the default values. IMPORTANT: If you're following along,
-	// make sure to replace the default values for smtp-username and smtp-password
-	// with your own Mailtrap credentials.
-	flag.StringVar(&cfg.smtp.host, "smtp-host", "smtp.mailtrap.io", "SMTP host")
-	flag.IntVar(&cfg.smtp.port, "smtp-port", 25, "SMTP port")
-	// use your own credentials here as username and password
-	// $env:SMTPUSERNAME="smtp_server_username_here"
-	// $env:SMTPPASSWORD="smtp_server_username_here"
-	flag.StringVar(&cfg.smtp.username, "smtp-username", os.Getenv("SMTPUSERNAME"), "SMTP username")
-	flag.StringVar(&cfg.smtp.password, "smtp-password", os.Getenv("SMTPPASSWORD"), "SMTP password")
-	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "Test <no-reply@test.com>", "SMTP sender")
-
 	flag.Parse()
-	// Using new json oriented logger
-	logger := jsonlog.New(os.Stdout, jsonlog.LevelInfo)
-	// logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
+	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 
 	db, err := openDB(cfg)
 	if err != nil {
-		logger.PrintFatal(err, nil) // calling PrintFatal function if there is an error with db server connection
+		logger.Fatalf("Connection failed. Error is: %s", err)
 	}
 	// db will be closed before main function is completed.
 	defer db.Close()
-	logger.PrintInfo("database connection pool established", nil) // printing custom info if db server connection is established
+	logger.Printf("database connection pool established")
 
 	app := &application{
 		config: cfg,
 		logger: logger,
 		models: data.NewModels(db), // data.NewModels() function to initialize a Models struct
-		// Initialize a new Mailer instance using the settings from the command line
-		// flags, and add it to the application struct.
-		mailer: mailer.New(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
 	}
-	// new way of declaration of server part
-
+	// Use the httprouter instance returned by app.routes() as the server handler.
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", cfg.port),
+		Handler:      app.routes(),
+		IdleTimeout:  time.Minute,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+	}
+	logger.Printf("starting %s server on %s", cfg.env, srv.Addr)
 	// reuse defined variable err
-	err = app.serve()
-	if err != nil {
-		logger.PrintFatal(err, nil)
-	}
-
+	err = srv.ListenAndServe()
+	logger.Fatal(err)
 }
 
 func openDB(cfg config) (*sql.DB, error) {

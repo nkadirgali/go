@@ -12,6 +12,9 @@ type Filters struct {
 	SortSafelist []string
 }
 
+// Check that the client-provided Sort field matches one of the entries in our safelist
+// and if it does, extract the column name from the Sort field by stripping the leading
+// hyphen character (if one exists).
 func (f Filters) sortColumn() string {
 	for _, safeValue := range f.SortSafelist {
 		if f.Sort == safeValue {
@@ -29,11 +32,18 @@ func (f Filters) sortDirection() string {
 	}
 	return "ASC"
 }
-
+func (f Filters) sortDirection2() string {
+	if strings.EqualFold(f.Sort, "asc") || strings.EqualFold(f.Sort, "ASC") {
+		return "awards ASC, id asc"
+	} else if strings.EqualFold(f.Sort, "desc") || strings.EqualFold(f.Sort, "DESC") {
+		return "awards DESC, id asc"
+	} else {
+		return "id asc"
+	}
+}
 func (f Filters) limit() int {
 	return f.PageSize
 }
-
 func (f Filters) offset() int {
 	return (f.Page - 1) * f.PageSize
 }
