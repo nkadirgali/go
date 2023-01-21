@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/shynggys9219/greenlight/internal/data"
-	"github.com/shynggys9219/greenlight/internal/validator"
+	"github.com/nkadirgali/go/internal/data"
+	"github.com/nkadirgali/go/internal/validator"
 )
 
 func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Request) {
@@ -49,9 +49,6 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 	err = app.models.Users.Insert(user)
 	if err != nil {
 		switch {
-		// If we get a ErrDuplicateEmail error, use the v.AddError() method to manually
-		// add a message to the validator instance, and then call our
-		// failedValidationResponse() helper.
 		case errors.Is(err, data.ErrDuplicateEmail):
 			v.AddError("email", "a user with this email address already exists")
 			app.failedValidationResponse(w, r, v.Errors)
@@ -60,37 +57,28 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 		}
 		return
 	}
-
-	// token generation to activate account
+	// After the user record has been created in the database, generate a new activation
+	// token for the user.
 	token, err := app.models.Tokens.New(user.ID, 3*24*time.Hour, data.ScopeActivation)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
-
-	// Call the Send() method on our Mailer, passing in the user's email address,
-	// name of the template file, and the User struct containing the new user's data.
 	app.background(func() {
-
-		//
+		// As there are now multiple pieces of data that we want to pass to our email
+		// templates, we create a map to act as a 'holding structure' for the data. This
+		// contains the plaintext version of the activation token for the user, along
+		// with their ID.
 		data := map[string]any{
 			"activationToken": token.Plaintext,
 			"userID":          user.ID,
 		}
-
-		// sending context data to template page
+		// Send the welcome email, passing in the map above as dynamic data.
 		err = app.mailer.Send(user.Email, "user_welcome.tmpl", data)
 		if err != nil {
-			// Importantly, if there is an error sending the email then we use the
-			// app.logger.PrintError() helper to manage it, instead of the
-			// app.serverErrorResponse() helper like before.
 			app.logger.PrintError(err, nil)
 		}
 	})
-
-	// Write a JSON response containing the user data along with a 201 Created status
-	// code.
-	// StatusAccepted - request accepted for processing but not completed yet
 	err = app.writeJSON(w, http.StatusAccepted, envelope{"user": user}, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
@@ -102,7 +90,6 @@ func (app *application) activateUserHandler(w http.ResponseWriter, r *http.Reque
 	var input struct {
 		TokenPlaintext string `json:"token"`
 	}
-
 	err := app.readJSON(w, r, &input)
 	if err != nil {
 		app.badRequestResponse(w, r, err)

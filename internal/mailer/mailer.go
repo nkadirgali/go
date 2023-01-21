@@ -3,6 +3,7 @@ package mailer
 import (
 	"bytes"
 	"embed"
+	"fmt"
 	"html/template"
 	"time"
 
@@ -13,8 +14,9 @@ import (
 // our email templates. This has a comment directive in the format `//go:embed <path>`
 // IMMEDIATELY ABOVE it, which indicates to Go that we want to store the contents of the
 // ./templates directory in the templateFS embedded file system variable.
-
-//go:embed templates
+// ↓↓↓
+//
+//go:embed "templates"
 var templateFS embed.FS
 
 // Define a Mailer struct which contains a mail.Dialer instance (used to connect to a
@@ -45,6 +47,7 @@ func (m Mailer) Send(recipient, templateFile string, data any) error {
 	// file system.
 	tmpl, err := template.New("email").ParseFS(templateFS, "templates/"+templateFile)
 	if err != nil {
+		fmt.Println("here5")
 		return err
 	}
 	// Execute the named template "subject", passing in the dynamic data and storing the
@@ -52,6 +55,7 @@ func (m Mailer) Send(recipient, templateFile string, data any) error {
 	subject := new(bytes.Buffer)
 	err = tmpl.ExecuteTemplate(subject, "subject", data)
 	if err != nil {
+		fmt.Println("here4")
 		return err
 	}
 	// Follow the same pattern to execute the "plainBody" template and store the result
@@ -59,12 +63,14 @@ func (m Mailer) Send(recipient, templateFile string, data any) error {
 	plainBody := new(bytes.Buffer)
 	err = tmpl.ExecuteTemplate(plainBody, "plainBody", data)
 	if err != nil {
+		fmt.Println("here3")
 		return err
 	}
 	// And likewise with the "htmlBody" template.
 	htmlBody := new(bytes.Buffer)
 	err = tmpl.ExecuteTemplate(htmlBody, "htmlBody", data)
 	if err != nil {
+		fmt.Println("here2")
 		return err
 	}
 	// Use the mail.NewMessage() function to initialize a new mail.Message instance.

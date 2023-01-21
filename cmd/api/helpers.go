@@ -68,10 +68,13 @@ func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst int
 
 		} else if errors.As(err, &invalidUnmarshalError) {
 			panic(err) //If our program reaches a point where it cannot be recovered due to some major errors
+
 		} else if errors.Is(err, io.ErrUnexpectedEOF) {
 			return errors.New("body contains badly-formed JSON")
+
 		} else if errors.Is(err, io.EOF) {
 			return errors.New("body must not be empty")
+
 		} else {
 			return err
 		}
@@ -80,8 +83,6 @@ func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst int
 	return nil
 }
 
-// The readString() helper returns a string value from the query string, or the provided
-// default value if no matching key could be found.
 func (app *application) readString(qs url.Values, key string, defaultValue string) string {
 	// Extract the value for a given key from the query string. If no key exists this
 	// will return the empty string "".
@@ -112,7 +113,7 @@ func (app *application) readCSV(qs url.Values, key string, defaultValue []string
 // integer before returning. If no matching key could be found it returns the provided
 // default value. If the value couldn't be converted to an integer, then we record an
 // error message in the provided Validator instance.
-func (app *application) readInt(qs url.Values, key string, defaultValue int /*, v *validator.Validator*/) int {
+func (app *application) readInt(qs url.Values, key string, defaultValue int) int {
 	// Extract the value from the query string.
 	s := qs.Get(key)
 	// If no key exists (or the value is empty) then return the default value.
@@ -123,9 +124,24 @@ func (app *application) readInt(qs url.Values, key string, defaultValue int /*, 
 	// validator instance and return the default value.
 	i, err := strconv.Atoi(s)
 	if err != nil {
-		//		v.AddError(key, "must be an integer value")
 		return defaultValue
 	}
 	// Otherwise, return the converted integer value.
 	return i
+}
+
+func (app *application) background(fn func()) {
+	// Increment the WaitGroup counter.
+	app.wg.Add(1)
+	// Launch the background goroutine.
+	go func() {
+		// Use defer to decrement the WaitGroup counter before the goroutine returns.
+		defer app.wg.Done()
+		defer func() {
+			if err := recover(); err != nil {
+				app.logger.PrintError(fmt.Errorf("%s", err), nil)
+			}
+		}()
+		fn()
+	}()
 }

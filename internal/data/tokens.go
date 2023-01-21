@@ -8,24 +8,23 @@ import (
 	"encoding/base32"
 	"time"
 
-	"github.com/shynggys9219/greenlight/internal/validator"
+	"github.com/nkadirgali/go/internal/validator"
 )
 
 // Define constants for the token scope. For now we just define the scope "activation"
 // but we'll add additional scopes later in the book.
 const (
-	ScopeActivation = "activation"
+	ScopeActivation     = "activation"
+	ScopeAuthentication = "authentication" // Include a new authentication scope.
 )
 
-// Define a Token struct to hold the data for an individual token. This includes the
-// plaintext and hashed versions of the token, associated user ID, expiry time and
-// scope.
+// Add struct tags to control how the struct appears when encoded to JSON.
 type Token struct {
-	Plaintext string
-	Hash      []byte
-	UserID    int64
-	Expiry    time.Time
-	Scope     string
+	Plaintext string    `json:"token"`
+	Hash      []byte    `json:"-"`
+	UserID    int64     `json:"-"`
+	Expiry    time.Time `json:"expiry"`
+	Scope     string    `json:"-"`
 }
 
 func generateToken(userID int64, ttl time.Duration, scope string) (*Token, error) {
@@ -65,7 +64,6 @@ func generateToken(userID int64, ttl time.Duration, scope string) (*Token, error
 	return token, nil
 }
 
-// Check that the plaintext token has been provided and is exactly 26 bytes long.
 func ValidateTokenPlaintext(v *validator.Validator, tokenPlaintext string) {
 	v.Check(tokenPlaintext != "", "token", "must be provided")
 	v.Check(len(tokenPlaintext) == 26, "token", "must be 26 bytes long")
@@ -87,7 +85,6 @@ func (m TokenModel) New(userID int64, ttl time.Duration, scope string) (*Token, 
 	return token, err
 }
 
-// Insert() adds the data for a specific token to the tokens table.
 func (m TokenModel) Insert(token *Token) error {
 	query := `
 	INSERT INTO tokens (hash, user_id, expiry, scope)
